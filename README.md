@@ -40,10 +40,11 @@ cdk bootstrap           # First time only
 ### Deploy (2 minutes)
 
 ```bash
-git clone <repo>
+git clone https://github.com/bharath1394/cdk-event-driven-api.git
 cd cdk-event-driven-api
-npm install --legacy-peer-deps
+npm install
 npm run build
+cdk synth
 cdk deploy
 ```
 
@@ -161,7 +162,3 @@ CDK v2 (TypeScript) → CloudFormation
 ├── DynamoDB Table (PAY_PER_REQUEST + PITR)
 └── CloudWatch Logs (7-day retention)
 ```
-
----
-
-*Senior DevOps portfolio project — demonstrates production event-driven patterns: fan-out, dead letter queues, observability, and infrastructure as code.*
