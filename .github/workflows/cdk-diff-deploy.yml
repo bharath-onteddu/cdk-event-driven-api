@@ -3,6 +3,12 @@ name: CDK Diff & Deploy
 on:
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to run diff against'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -11,21 +17,25 @@ permissions:
 jobs:
   check-trigger:
     name: Check Trigger
-    if: github.event.issue.pull_request  # Only run on PR comments
+    if: github.event.issue.pull_request || github.event_name == 'workflow_dispatch'  # Run on PR comments or manual trigger
     runs-on: ubuntu-latest
     outputs:
       should_run: 'true'
     steps:
       - name: Check for /run:cdk comment
         run: |
-          COMMENT="${{ github.event.comment.body }}"
-          echo "Comment received: $COMMENT"
-          
-          if [[ "$COMMENT" == *"/run:cdk"* ]]; then
-            echo "✅ Found /run:cdk - proceeding with diff and deploy"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "✅ Manual trigger via workflow_dispatch"
           else
-            echo "❌ Comment does not contain /run:cdk"
-            exit 1
+            COMMENT="${{ github.event.comment.body }}"
+            echo "Comment received: $COMMENT"
+            
+            if [[ "$COMMENT" == *"/run:cdk"* ]]; then
+              echo "✅ Found /run:cdk - proceeding with diff and deploy"
+            else
+              echo "❌ Comment does not contain /run:cdk"
+              exit 1
+            fi
           fi
 
   call-cdk-diff:
