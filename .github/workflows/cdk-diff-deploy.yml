@@ -1,0 +1,57 @@
+name: CDK Diff & Deploy
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  check-trigger:
+    name: Check Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Check if triggered by comment
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            if [[ "${{ github.event.comment.body }}" == *"/run:cdk"* ]]; then
+              echo "run=true" >> $GITHUB_OUTPUT
+              echo "✅ Triggered by comment: /run:cdk"
+            else
+              echo "run=false" >> $GITHUB_OUTPUT
+              echo "❌ Comment does not contain /run:cdk"
+            fi
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            echo "✅ Triggered by pull request"
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+  call-cdk-diff:
+    name: Run CDK Diff
+    needs: check-trigger
+    if: needs.check-trigger.outputs.run == 'true'
+    uses: ./.github/workflows/reusable-cdk-diff.yml
+    secrets: inherit
+
+  approve-diff:
+    name: Approve CDK Changes
+    needs: call-cdk-diff
+    runs-on: ubuntu-latest
+    environment:
+      name: approval
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Waiting for approval
+        run: echo "✅ CDK Diff approved! Proceeding with deployment..."
+
+  call-cdk-deploy:
+    name: Run CDK Deploy
+    needs: [check-trigger, approve-diff]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    uses: ./.github/workflows/reusable-cdk-deploy.yml
+    secrets: inherit

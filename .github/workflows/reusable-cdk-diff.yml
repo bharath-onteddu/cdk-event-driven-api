@@ -1,0 +1,65 @@
+name: Reusable CDK Diff
+
+on:
+  workflow_call:
+
+jobs:
+  cdk-diff:
+    name: CDK Diff & Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Lambda functions
+        run: |
+          cd infra
+          ./build.sh --no-deploy
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: CDK Synth (validate template)
+        run: |
+          cd infra
+          npx cdk synth
+
+      - name: CDK Diff
+        run: |
+          cd infra
+          npx cdk diff > /tmp/cdk-diff.txt 2>&1 || true
+          cat /tmp/cdk-diff.txt
+
+      - name: Save Diff Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-diff-output
+          path: /tmp/cdk-diff.txt
+
+      - name: Comment PR with Diff
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const diff = fs.readFileSync('/tmp/cdk-diff.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## CDK Diff Output\n\n\`\`\`\n${diff}\n\`\`\``
+            });
