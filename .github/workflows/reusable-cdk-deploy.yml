@@ -21,7 +21,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies (root)
-        run: npm install
+        run: cd infra && npm install
 
       - name: Build Lambda functions
         run: |
