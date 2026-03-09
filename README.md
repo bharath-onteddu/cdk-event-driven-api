@@ -1,54 +1,75 @@
 # cdk-event-driven-api
 
-Production-ready event-driven serverless API on AWS using CDK v2 (TypeScript). API Gateway → Lambda → SNS/SQS fan-out → consumer Lambdas → DynamoDB, with DLQ retry logic and CloudWatch observability.
+Production-ready event-driven serverless API on AWS using CDK v2 (TypeScript).
 
-## Architecture
+## TL;DR
 
-```
-POST /api → API Gateway → Lambda (ApiHandler)
-                           ↓ publishes
-                    SNS Topic (order-events)
-                      /            \
-           SQS Queue 1     SQS Queue 2
-             (DLQ)           (DLQ)
-               ↓              ↓
-        Lambda Consumer1  Lambda Consumer2
-               ↓              ↓
-            DynamoDB (order-events table)
-                    ↓
-            CloudWatch Logs + Metrics
-```
-
-**Key patterns demonstrated:**
-- SNS fan-out → parallel SQS processing
-- `maxReceiveCount: 3` + DLQ isolation
-- Full request tracing via `requestId`
-- Production timeouts/memory sizing
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-```bash
-npm i -g aws-cdk        # v2.152+
-aws configure           # Your AWS account credentials
-cdk bootstrap           # First time only
-```
-
-### Deploy (2 minutes)
+### Local deploy
 
 ```bash
 git clone https://github.com/bharath1394/cdk-event-driven-api.git
-cd cdk-event-driven-api
+cd cdk-event-driven-api/infra
 npm install
-npm run build
-cdk synth
-cdk deploy
+./build.sh --no-deploy
+npx cdk deploy
 ```
 
-**Get outputs:**
+### PR command deploy/destroy
+
+- `/run:cdk,deploy` -> CDK diff + deploy from PR head commit
+- `/run:cdk,destroy` -> CDK destroy from PR head commit
+
+Both workflows require approval via the `approval` environment.
+
+---
+
+## Architecture
+
+```text
+POST /api -> API Gateway -> Lambda (ApiHandler)
+                          -> SNS Topic (order-events)
+                             -> SQS Queue 1 (DLQ) -> Lambda Consumer1 -> DynamoDB
+                             -> SQS Queue 2 (DLQ) -> Lambda Consumer2 -> DynamoDB
+```
+
+Key patterns:
+- SNS fan-out -> parallel SQS processing
+- Retry + DLQ (`maxReceiveCount: 3`)
+- Request tracing via `requestId`
+- CloudWatch logs and metrics
+
+---
+
+## Prerequisites
+
+```bash
+npm i -g aws-cdk
+aws configure
+cdk bootstrap
+```
+
+---
+
+## Local Usage
+
+### Deploy
+
+```bash
+cd infra
+npm install
+./build.sh --no-deploy
+npx cdk synth
+npx cdk deploy
+```
+
+### Destroy
+
+```bash
+cd infra
+npx cdk destroy --all
+```
+
+### Get API endpoint output
 
 ```bash
 aws cloudformation describe-stacks \
@@ -58,7 +79,61 @@ aws cloudformation describe-stacks \
 
 ---
 
-## 🧪 Test End-to-End
+## GitHub Actions Usage
+
+### Commands on PR comments
+
+- `/run:cdk,deploy`
+- `/run:cdk,destroy`
+
+### Workflow behavior
+
+1. Triggered from PR comment command.
+2. Resolves PR head SHA and checks out that exact commit.
+3. Runs CDK steps from `infra/`.
+4. Waits for environment approval (`approval`).
+5. Continues to deploy or destroy.
+
+### Workflow files
+
+- `.github/workflows/cdk-diff-deploy.yml`
+- `.github/workflows/reusable-cdk-diff-deploy.yml`
+- `.github/workflows/cdk-destroy.yml`
+- `.github/workflows/reusable-cdk-destroy.yml`
+
+---
+
+## GitHub Setup Required
+
+### Secrets
+
+Repository secrets used by workflows:
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION`
+
+### Environment approval
+
+Create environment `approval` and configure Required Reviewers.
+
+### Actions permissions (recommended for public repo)
+
+- Set `Settings -> Actions -> General -> Workflow permissions` to read-only.
+- Use restricted actions policy (allow your org + selected actions).
+
+---
+
+## Security Model
+
+Current controls in workflows:
+- Only trusted commenters can trigger (`OWNER`, `MEMBER`, `COLLABORATOR`).
+- Fork PRs are blocked before deploy/destroy.
+- Minimal token permissions: `contents: read`, `pull-requests: read`.
+- Environment approval gate required before deploy/destroy jobs.
+
+---
+
+## Test End-to-End
 
 ```bash
 API_URL="https://abc123.execute-api.region.amazonaws.com/prod/"
@@ -67,7 +142,8 @@ curl -X POST "$API_URL" \
   -H "Content-Type: application/json" \
   -d '{"data": "Production order #1"}'
 ```
-**Expected response:**
+
+Expected response:
 
 ```json
 {
@@ -76,29 +152,7 @@ curl -X POST "$API_URL" \
 }
 ```
 
-**Verification:**
-```
-# Wait 5 seconds then scan
-aws dynamodb scan --table-name order-events
-```
-
-### Output
-```
-{
-  "Items": [
-    { "requestId": {"S": "abc-123"}, "processedBy": {"S": "Consumer1"}, "data": {"S": "sort key test"} },
-    { "requestId": {"S": "abc-123"}, "processedBy": {"S": "Consumer2"}, "data": {"S": "sort key test"} }
-  ],
-  "Count": 2
-}
-```
-
-
-### Verify Processing
-
-1. **CloudWatch Logs** (`/aws/lambda/order-consumer-*`) — both consumers process the same `requestId`
-2. **DynamoDB** (`order-events` table) — 2 records per request, different `processedBy` values
-3. **SQS Metrics** — queue depth stays at 0 (healthy processing)
+Verify DynamoDB writes:
 
 ```bash
 aws dynamodb scan --table-name order-events --limit 2
@@ -106,59 +160,37 @@ aws dynamodb scan --table-name order-events --limit 2
 
 ---
 
-## ✅ Production Features
+## Troubleshooting
 
-| Pattern | Implementation |
-|---|---|
-| **Retry Logic** | `maxReceiveCount: 3`, DLQ with 14-day retention |
-| **Fan-out** | SNS → 2x SQS parallel processing |
-| **Durability** | DynamoDB PITR, SQS 7-day retention |
-| **Observability** | Request ID tracing, structured CloudWatch logs |
-| **Security** | Least-privilege IAM auto-generated by CDK |
+### PR comment command does not trigger
+
+- Workflow files must exist on default branch (`main`).
+- Comment must be exactly command-prefixed (`/run:cdk,deploy` or `/run:cdk,destroy`).
+- Comment author must be `OWNER`, `MEMBER`, or `COLLABORATOR`.
+
+### Workflow waits or never waits for approval
+
+- Ensure environment is named `approval`.
+- Ensure `approval` has Required Reviewers configured.
+
+### `Resource not accessible by integration` (403)
+
+- Usually missing token scope for an API action.
+- Current deploy/destroy workflows avoid issue-comment writes and use minimal required scopes.
 
 ---
 
-## 🛠 Project Structure
+## Project Structure
 
-```
+```text
 cdk-event-driven-api/
-├── bin/
-│   └── cdk-event-driven-api.ts   # CDK app entrypoint
-├── lib/
-│   └── infra.ts                  # All stacks and constructs
-├── cdk.json
-├── package.json
-├── tsconfig.json
+├── infra/
+│   ├── bin/
+│   ├── lib/
+│   ├── service/
+│   ├── build.sh
+│   ├── cdk.json
+│   └── package.json
+├── .github/workflows/
 └── README.md
-```
-
----
-
-## 🔧 Customization
-
-- **More consumers**: Duplicate the SQS + Lambda consumer pattern
-- **Environments**: Add `Stage` prop to Stack constructor for dev/prod
-- **CI/CD**: Add `cdk-pipelines` with GitHub Actions
-- **Scaling**: Set SQS reserved concurrency on Lambda consumers
-
----
-
-## 🗑 Destroy
-
-```bash
-cdk destroy
-```
-
----
-
-## 🧰 Tech Stack
-
-```
-CDK v2 (TypeScript) → CloudFormation
-├── API Gateway (REST + CORS)
-├── Lambda Node.js 20 (3 functions)
-├── SNS Topic (order-events)
-├── SQS Queues (4 total including DLQs)
-├── DynamoDB Table (PAY_PER_REQUEST + PITR)
-└── CloudWatch Logs (7-day retention)
 ```
