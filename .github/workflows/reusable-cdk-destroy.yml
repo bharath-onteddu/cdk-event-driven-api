@@ -1,0 +1,112 @@
+name: Reusable CDK Destroy Workflow
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: Pull request number to destroy from
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cdk-destroy-pr-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  cdk-destroy:
+    name: CDK Destroy
+    runs-on: ubuntu-latest
+    environment:
+      name: approval
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Resolve PR head
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = Number('${{ inputs.pr_number }}');
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_repo', pr.head.repo.full_name);
+
+      - name: Comment PR before destroy
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: Number('${{ inputs.pr_number }}'),
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "## CDK Destroy Requested\n\nWaiting for environment approval, then `cdk destroy --all --force` will run using this PR head commit."
+            });
+
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr-info.outputs.head_repo }}
+          ref: ${{ steps.pr-info.outputs.head_sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (infra)
+        run: cd infra && npm install
+
+      - name: Build Lambda functions
+        run: |
+          cd infra
+          ./build.sh --no-deploy
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: CDK Synth
+        run: |
+          cd infra
+          npx cdk synth
+
+      - name: CDK Destroy
+        run: |
+          cd infra
+          npx cdk destroy --all --force > /tmp/cdk-destroy.txt 2>&1
+          cat /tmp/cdk-destroy.txt
+
+      - name: Save Destroy Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-destroy-output
+          path: /tmp/cdk-destroy.txt
+
+      - name: Comment PR with Destroy Output
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let output = 'Destroy output file not found.';
+            if (fs.existsSync('/tmp/cdk-destroy.txt')) {
+              output = fs.readFileSync('/tmp/cdk-destroy.txt', 'utf8');
+            }
+            github.rest.issues.createComment({
+              issue_number: Number('${{ inputs.pr_number }}'),
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## CDK Destroy Output\n\n\`\`\`\n${output}\n\`\`\``
+            });
