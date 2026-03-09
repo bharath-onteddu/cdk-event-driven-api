@@ -21,12 +21,20 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        working-directory: infra
-        run: npm ci
+        run: |
+          if [ ! -d infra ]; then
+            echo "infra directory not found in workspace:"
+            pwd
+            ls -la
+            exit 1
+          fi
+          cd infra
+          npm ci
 
       - name: CDK synth
-        working-directory: infra
-        run: npx cdk synth --no-lookups
+        run: |
+          cd infra
+          npx cdk synth --no-lookups
 
   build-lambdas:
     name: build-lambdas
@@ -41,12 +49,19 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        working-directory: infra
-        run: npm ci
+        run: |
+          if [ ! -d infra ]; then
+            echo "infra directory not found in workspace:"
+            pwd
+            ls -la
+            exit 1
+          fi
+          cd infra
+          npm ci
 
       - name: Build Lambda functions
-        working-directory: infra
         run: |
+          cd infra
           ./build.sh --no-deploy
 
   tests:
@@ -62,12 +77,19 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        working-directory: infra
-        run: npm ci
+        run: |
+          if [ ! -d infra ]; then
+            echo "infra directory not found in workspace:"
+            pwd
+            ls -la
+            exit 1
+          fi
+          cd infra
+          npm ci
 
       - name: Run tests (if configured)
-        working-directory: infra
         run: |
+          cd infra
           if npm run | grep -qE '^[[:space:]]+test'; then
             npm test -- --ci
           else
@@ -87,12 +109,19 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        working-directory: infra
-        run: npm ci
+        run: |
+          if [ ! -d infra ]; then
+            echo "infra directory not found in workspace:"
+            pwd
+            ls -la
+            exit 1
+          fi
+          cd infra
+          npm ci
 
       - name: Run lint (if configured)
-        working-directory: infra
         run: |
+          cd infra
           if npm run | grep -qE '^[[:space:]]+lint'; then
             npm run lint
           else
