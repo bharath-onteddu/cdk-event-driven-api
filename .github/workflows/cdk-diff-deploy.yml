@@ -3,12 +3,6 @@ name: CDK Diff & Deploy
 on:
   issue_comment:
     types: [created, edited]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'PR number to run diff against'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -17,15 +11,8 @@ permissions:
 
 jobs:
   diff-deploy-from-comment:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/run:cdk')
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/run:cdk') && !contains(github.event.comment.body, '/run:cdk,destroy')
     uses: ./.github/workflows/reusable-cdk-diff-deploy.yml
     with:
       pr_number: ${{ github.event.issue.number }}
-    secrets: inherit
-
-  diff-deploy-manual:
-    if: github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/reusable-cdk-diff-deploy.yml
-    with:
-      pr_number: ${{ inputs.pr_number }}
     secrets: inherit

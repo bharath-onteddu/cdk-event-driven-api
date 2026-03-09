@@ -96,21 +96,13 @@ jobs:
               body: `## CDK Diff Output\n\n\`\`\`\n${diff}\n\`\`\``
             });
 
-  approve-changes:
-    name: Approve CDK Changes
+  cdk-deploy:
+    name: CDK Deploy
     needs: cdk-diff
     runs-on: ubuntu-latest
     environment:
-      name: production
+      name: approval
       url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    steps:
-      - name: Waiting for approval
-        run: echo "✅ Changes approved! Proceeding with deployment..."
-
-  cdk-deploy:
-    name: CDK Deploy
-    needs: [approve-changes, cdk-diff]
-    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout PR head
