@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: write
+  pull-requests: read
 
 concurrency:
   group: cdk-destroy-pr-${{ inputs.pr_number }}
@@ -37,6 +37,15 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
+
+            const currentRepo = `${context.repo.owner}/${context.repo.repo}`;
+            if (pr.head.repo.full_name !== currentRepo) {
+              core.setFailed(
+                `Security policy: refusing to run on fork PRs. Head repo ${pr.head.repo.full_name} is not ${currentRepo}.`
+              );
+              return;
+            }
+
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('head_repo', pr.head.repo.full_name);
 

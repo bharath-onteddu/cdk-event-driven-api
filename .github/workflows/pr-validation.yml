@@ -1,0 +1,103 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  cdk-synth:
+    name: cdk-synth
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: cd infra && npm ci
+
+      - name: CDK synth
+        run: cd infra && npx cdk synth --no-lookups
+
+  build-lambdas:
+    name: build-lambdas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: cd infra && npm ci
+
+      - name: Build Lambda functions
+        run: |
+          cd infra
+          ./build.sh --no-deploy
+
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: cd infra && npm ci
+
+      - name: Run tests (if configured)
+        run: |
+          cd infra
+          if npm run | grep -qE '^[[:space:]]+test'; then
+            npm test -- --ci
+          else
+            echo "No test script found; passing."
+          fi
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: cd infra && npm ci
+
+      - name: Run lint (if configured)
+        run: |
+          cd infra
+          if npm run | grep -qE '^[[:space:]]+lint'; then
+            npm run lint
+          else
+            echo "No lint script found; passing."
+          fi

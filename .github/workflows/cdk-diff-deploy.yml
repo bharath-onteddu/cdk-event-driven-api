@@ -2,16 +2,14 @@ name: CDK Diff & Deploy
 
 on:
   issue_comment:
-    types: [created, edited]
+    types: [created]
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   diff-deploy-from-comment:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/run:cdk,deploy')
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/run:cdk,deploy') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     uses: ./.github/workflows/reusable-cdk-diff-deploy.yml
     with:
       pr_number: ${{ github.event.issue.number }}
