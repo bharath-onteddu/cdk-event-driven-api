@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: read
 
 jobs:
   diff-deploy-from-comment:
